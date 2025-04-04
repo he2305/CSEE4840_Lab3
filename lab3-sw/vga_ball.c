@@ -36,17 +36,18 @@
 #define DRIVER_NAME "vga_ball"
 
 /* Device registers */
-#define CIR_RED(x) (x)
-#define CIR_GREEN(x) ((x)+1)
-#define CIR_BLUE(x) ((x)+2)
-#define CIR_XH(x) ((x)+3)
-#define CIR_XL(x) ((x)+4)
-#define CIR_YH(x) ((x)+5)
-#define CIR_YL(x) ((x)+6)
-#define CIR_R(x) ((x)+7)
-#define BG_RED(x) ((x)+8)
-#define BG_GREEN(x) ((x)+9)
-#define BG_BLUE(x) ((x)+10)
+#define CIR_XH(x) ((x) + 0)
+#define CIR_XL(x) ((x) + 1)
+#define CIR_YH(x) ((x) + 2)
+#define CIR_YL(x) ((x) + 3)
+#define CIR_R(x)  ((x) + 4)
+#define CIR_RED(x) ((x) + 5)
+#define CIR_GREEN(x) ((x) + 6)
+#define CIR_BLUE(x) ((x) + 7)
+#define BG_RED(x) ((x) + 8)
+#define BG_GREEN(x) ((x) + 9)
+#define BG_BLUE(x) ((x) + 10)
+
 
 /*
  * Information about our device
@@ -86,13 +87,17 @@ static void write_bg_color(vga_ball_color_t *color)
 
 static void write_circle(vga_ball_circle_t *circle)
 {
-	iowrite8((unsigned char)((circle->x>>8)&0b11), CIR_XH(dev.virtbase) );
-	iowrite8((unsigned char)(circle->x), CIR_XL(dev.virtbase) );
-	iowrite8((unsigned char)((circle->y>>8)&0b11), CIR_YH(dev.virtbase));
-	iowrite8((unsigned char)(circle->y), CIR_YL(dev.virtbase));
-	iowrite8(circle->radius, CIR_R(dev.virtbase));
-	dev.circle = *circle;
+    /* Write circle x coordinate in two bytes */
+    iowrite8((unsigned char)((circle->x >> 8) & 0xFF), CIR_XH(dev.virtbase));
+    iowrite8((unsigned char)(circle->x & 0xFF), CIR_XL(dev.virtbase));
+    /* Write circle y coordinate in two bytes */
+    iowrite8((unsigned char)((circle->y >> 8) & 0xFF), CIR_YH(dev.virtbase));
+    iowrite8((unsigned char)(circle->y & 0xFF), CIR_YL(dev.virtbase));
+    /* Write circle radius */
+    iowrite8(circle->radius, CIR_R(dev.virtbase));
+    dev.circle = *circle;
 }
+
 
 /*
  * Handle ioctl() calls from userspace:
@@ -101,33 +106,39 @@ static void write_circle(vga_ball_circle_t *circle)
  */
 static long vga_ball_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 {
-	vga_ball_arg_t vla;
+    vga_ball_arg_t vla;
+    switch (cmd) {
+    case VGA_BALL_WRITE:
+        if (copy_from_user(&vla, (vga_ball_arg_t *) arg, sizeof(vga_ball_arg_t)))
+            return -EACCES;
+        /* Write only the circle color and background color */
+        write_circle_color(&vla.c_color);
+        write_bg_color(&vla.bg_color);
+        break;
 
-	switch (cmd) {
-	case VGA_BALL_WRITE:
-		if (copy_from_user(&vla, (vga_ball_arg_t *) arg,
-				   sizeof(vga_ball_arg_t)))
-			return -EACCES;
-		write_circle_color(&vla.c_color);
-		write_circle(&vla.circle);
-		write_bg_color(&vla.bg_color);
-		break;
+    case VGA_BALL_READ:
+        vla.c_color = dev.c_color;
+        vla.circle = dev.circle;
+        vla.bg_color = dev.bg_color;
+        if (copy_to_user((vga_ball_arg_t *) arg, &vla, sizeof(vga_ball_arg_t)))
+            return -EACCES;
+        break;
 
-	case VGA_BALL_READ:
-	  	vla.c_color = dev.c_color;
-		vla.circle = dev.circle;
-		vla.bg_color = dev.bg_color;
-		if (copy_to_user((vga_ball_arg_t *) arg, &vla,
-				 sizeof(vga_ball_arg_t)))
-			return -EACCES;
-		break;
+    case VGA_BALL_SET_CIRCLE:
+    {
+        vga_ball_circle_t circle;
+        if (copy_from_user(&circle, (vga_ball_circle_t *) arg, sizeof(vga_ball_circle_t)))
+            return -EACCES;
+        write_circle(&circle);
+        break;
+    }
 
-	default:
-		return -EINVAL;
-	}
-
-	return 0;
+    default:
+        return -EINVAL;
+    }
+    return 0;
 }
+
 
 /* The operations our device knows how to do */
 static const struct file_operations vga_ball_fops = {
