@@ -1,47 +1,48 @@
 /*
  * Userspace program that communicates with the vga_ball device driver
  * through ioctls
+ *
  * Stephen A. Edwards
  * Columbia University
  */
 
-#include <stdio.h>
-#include "vga_ball.h"
-#include <sys/ioctl.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <argp.h>
-#include <stdlib.h>
-#include <fcntl.h>
-#include <string.h>
-#include <unistd.h>
-
-#define abs(NUM) ((NUM) > 0 ? (NUM) : -(NUM))
-
-int vga_ball_fd;
-
-/* Read and print the background color */
-void print_background_color() {
-    vga_ball_arg_t vla;
-    
-    if (ioctl(vga_ball_fd, VGA_BALL_READ, &vla)) {
-        perror("ioctl(VGA_BALL_READ) failed");
-        return;
-    }
-    printf("%02x %02x %02x\n",
-           vla.bg_color.red, vla.bg_color.green, vla.bg_color.blue);
-}
-
-/* Set the background color */
-void set_background_color(const vga_ball_color_t *c)
-{
-    vga_ball_arg_t vla;
-    vla.bg_color = *c;
-    if (ioctl(vga_ball_fd, VGA_BALL_WRITE, &vla)) {
-        perror("ioctl(VGA_BALL_WRITE) failed");
-        return;
-    }
-}
+ #include <stdio.h>
+ #include "vga_ball.h"
+ #include <sys/ioctl.h>
+ #include <sys/types.h>
+ #include <sys/stat.h>
+ #include <argp.h>
+ #include <stdlib.h>
+ #include <fcntl.h>
+ #include <string.h>
+ #include <unistd.h>
+ 
+ #define abs(NUM) ((NUM) > 0 ? NUM : -(NUM))
+ 
+ int vga_ball_fd;
+ 
+ /* Read and print the background color */
+ void print_background_color() {
+   vga_ball_arg_t vla;
+   
+   if (ioctl(vga_ball_fd, VGA_BALL_READ_BACKGROUND, &vla)) {
+       perror("ioctl(VGA_BALL_READ_BACKGROUND) failed");
+       return;
+   }
+   printf("%02x %02x %02x\n",
+    vla.background.red, vla.background.green, vla.background.blue);
+ }
+ 
+ /* Set the background color */
+ void set_background_color(const vga_ball_color_t *c)
+ {
+   vga_ball_arg_t vla;
+   vla.background = *c;
+   if (ioctl(vga_ball_fd, VGA_BALL_WRITE_BACKGROUND, &vla)) {
+       perror("ioctl(VGA_BALL_SET_BACKGROUND) failed");
+       return;
+   }
+ }
  
  int parse_nums(const char *arg, int *arr, int max)
  {
@@ -220,6 +221,14 @@ void set_background_color(const vga_ball_color_t *c)
    calc_next_bound(circle,dir);
  }
  
+void set_circle(const vga_ball_circle_t *circle)
+{
+    if (ioctl(vga_ball_fd, VGA_BALL_SET_CIRCLE, circle)) {
+        perror("ioctl(VGA_BALL_SET_CIRCLE) failed");
+        return;
+    }
+}
+
  void update_circle(vga_ball_circle_t *circle, vga_ball_dir_t *dir)
  {
    dir->fx += dir->vx;
@@ -309,73 +318,83 @@ void set_background_color(const vga_ball_color_t *c)
  
  int main(int argc, char **argv)
  {
-   vga_ball_arg_t vla;
-   int i;
+     vga_ball_arg_t vla;
+     int i;
  
-   struct arguments args;
-   args.circle.radius=16;
-   args.dir.dx=0;
-   args.dir.speed=1.5;
-   args.dir.dy=0;
-   args.c_random_color = 1;
-   args.bg_color.red=args.bg_color.green=args.bg_color.blue=0xff;
-   args.c_color.red=0xff;
-   args.c_color.green=args.c_color.blue=0;
-   argp_parse(&argp,argc,argv,0,0,&args);
-   vga_ball_circle_t circle = args.circle;
-   dir = args.dir;
-   vla.c_color = args.c_color;
-   vla.bg_color = args.bg_color;
+     struct arguments args;
+     args.circle.radius = 16;
+     args.dir.dx = 0;
+     args.dir.speed = 1.5;
+     args.dir.dy = 0;
+     args.c_random_color = 1;
+     args.bg_color.red = args.bg_color.green = args.bg_color.blue = 0xff;
+     args.c_color.red = 0xff;
+     args.c_color.green = args.c_color.blue = 0;
+     argp_parse(&argp, argc, argv, 0, 0, &args);
+     vga_ball_circle_t circle = args.circle;
+     dir = args.dir;
+     vla.c_color = args.c_color;
+     vla.bg_color = args.bg_color;
  
-   static const char filename[] = "/dev/vga_ball";
- 
-   static const vga_ball_color_t colors[] = {
-     { 0xff, 0x00, 0x00 }, /* Red */
-     { 0x00, 0xff, 0x00 }, /* Green */
-     { 0x00, 0x00, 0xff }, /* Blue */
-     { 0xff, 0xff, 0x00 }, /* Yellow */
-     { 0x00, 0xff, 0xff }, /* Cyan */
-     { 0xff, 0x00, 0xff }, /* Magenta */
-     { 0x80, 0x80, 0x80 }, /* Gray */
-     { 0x00, 0x00, 0x00 }, /* Black */
-     { 0xff, 0xff, 0xff }  /* White */
-   };
+     static const char filename[] = "/dev/vga_ball";
+     static const vga_ball_color_t colors[] = {
+         { 0xff, 0x00, 0x00 }, /* Red */
+         { 0x00, 0xff, 0x00 }, /* Green */
+         { 0x00, 0x00, 0xff }, /* Blue */
+         { 0xff, 0xff, 0x00 }, /* Yellow */
+         { 0x00, 0xff, 0xff }, /* Cyan */
+         { 0xff, 0x00, 0xff }, /* Magenta */
+         { 0x80, 0x80, 0x80 }, /* Gray */
+         { 0x00, 0x00, 0x00 }, /* Black */
+         { 0xff, 0xff, 0xff }  /* White */
+     };
  
  # define COLORS 9
  
-   printf("VGA ball Userspace program started\n");
+     printf("VGA ball Userspace program started\n");
  
-   if ( (vga_ball_fd = open(filename, O_RDWR)) == -1) {
-     fprintf(stderr, "could not open %s\n", filename);
-     return -1;
-   }
+     if ((vga_ball_fd = open(filename, O_RDWR)) == -1) {
+         fprintf(stderr, "could not open %s\n", filename);
+         return -1;
+     }
  
-   reset_circle(&circle,&dir);
-   vla.circle = circle;
+     /* Initialize the ball position */
+     reset_circle(&circle, &dir);
+     set_circle(&circle);
  
-   printf("initial state: ");
-   print_background_color();
- 
-   int j = 0;
-   int dr = 5;
- 
-   for (i = 0 ; i < 24 ; i++) {
-     j++;
-     if (args.c_random_color) {
-       vla.c_color = colors[i % COLORS ];
-     } 
-     vla.circle = circle;
-     set_background_color(&colors[i % COLORS ]);
+     /* Set initial colors */
+     if (ioctl(vga_ball_fd, VGA_BALL_WRITE, &vla)) {
+         perror("ioctl(VGA_BALL_WRITE) failed");
+     }
+     printf("initial state: ");
      print_background_color();
-     if(circle.radius>100)
-       dr=-5;
-     if(circle.radius<10)
-       dr=5;
-     update_circle(&circle, &dir);
-     usleep(400000);
-   }
-   
-   printf("VGA BALL Userspace program terminating\n");
-   return 0;
+ 
+     int j = 0;
+     int dr = 5;
+ 
+     for (i = 0 ; i < 24 ; i++) {
+         j++;
+         if (args.c_random_color) {
+             vla.c_color = colors[i % COLORS];
+         }
+         /* Update the background color via the dedicated ioctl */
+         set_background_color(&colors[i % COLORS]);
+         print_background_color();
+ 
+         /* Update circle dimensions (if desired) */
+         if (circle.radius > 100)
+             dr = -5;
+         if (circle.radius < 10)
+             dr = 5;
+         update_circle(&circle, &dir);
+ 
+         /* Use the new ioctl to update the ball’s coordinates */
+         set_circle(&circle);
+ 
+         usleep(400000);
+     }
+ 
+     printf("VGA BALL Userspace program terminating\n");
+     return 0;
  }
  
