@@ -1,7 +1,6 @@
 /*
  * Userspace program that communicates with the vga_ball device driver
  * through ioctls
- *
  * Stephen A. Edwards
  * Columbia University
  */
@@ -17,31 +16,31 @@
  #include <string.h>
  #include <unistd.h>
  
- #define abs(NUM) ((NUM) > 0 ? NUM : -(NUM))
+ #define abs(NUM) ((NUM) > 0 ? (NUM) : -(NUM))
  
  int vga_ball_fd;
  
  /* Read and print the background color */
  void print_background_color() {
-   vga_ball_arg_t vla;
-   
-   if (ioctl(vga_ball_fd, VGA_BALL_READ_BACKGROUND, &vla)) {
-       perror("ioctl(VGA_BALL_READ_BACKGROUND) failed");
-       return;
-   }
-   printf("%02x %02x %02x\n",
-    vla.background.red, vla.background.green, vla.background.blue);
+     vga_ball_arg_t vla;
+     
+     if (ioctl(vga_ball_fd, VGA_BALL_READ, &vla)) {
+         perror("ioctl(VGA_BALL_READ) failed");
+         return;
+     }
+     printf("%02x %02x %02x\n",
+            vla.bg_color.red, vla.bg_color.green, vla.bg_color.blue);
  }
  
  /* Set the background color */
  void set_background_color(const vga_ball_color_t *c)
  {
-   vga_ball_arg_t vla;
-   vla.background = *c;
-   if (ioctl(vga_ball_fd, VGA_BALL_WRITE_BACKGROUND, &vla)) {
-       perror("ioctl(VGA_BALL_SET_BACKGROUND) failed");
-       return;
-   }
+     vga_ball_arg_t vla;
+     vla.bg_color = *c;
+     if (ioctl(vga_ball_fd, VGA_BALL_WRITE, &vla)) {
+         perror("ioctl(VGA_BALL_WRITE) failed");
+         return;
+     }
  }
  
  int parse_nums(const char *arg, int *arr, int max)
