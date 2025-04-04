@@ -12,9 +12,9 @@ typedef struct {
     unsigned char left, top, right, bottom;
 } vga_ball_rect_t;
 
-typedef struct {
-    short x, y;
-    unsigned char radius;
+typedef struct __attribute__((packed)) {
+  short x, y;
+  unsigned char radius;
 } vga_ball_circle_t;
 
 typedef struct {
