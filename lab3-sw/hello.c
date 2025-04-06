@@ -6,377 +6,180 @@
  * Columbia University
  */
 
- #include <stdio.h>
- #include "vga_ball.h"
- #include <sys/ioctl.h>
- #include <sys/types.h>
- #include <sys/stat.h>
- #include <argp.h>
- #include <stdlib.h>
- #include <fcntl.h>
- #include <string.h>
- #include <unistd.h>
- 
- #define abs(NUM) ((NUM) > 0 ? NUM : -(NUM))
- 
- int vga_ball_fd;
- 
- /* Read and print the background color */
- void print_background_color() {
-   vga_ball_arg_t vla;
-   
-   if (ioctl(vga_ball_fd, VGA_BALL_READ_BACKGROUND, &vla)) {
-       perror("ioctl(VGA_BALL_READ_BACKGROUND) failed");
-       return;
-   }
-   printf("%02x %02x %02x\n",
-    vla.background.red, vla.background.green, vla.background.blue);
- }
- 
- /* Set the background color */
- void set_background_color(const vga_ball_color_t *c)
- {
-   vga_ball_arg_t vla;
-   vla.background = *c;
-   if (ioctl(vga_ball_fd, VGA_BALL_WRITE_BACKGROUND, &vla)) {
-       perror("ioctl(VGA_BALL_SET_BACKGROUND) failed");
-       return;
-   }
- }
- 
- int parse_nums(const char *arg, int *arr, int max)
- {
-   int *p = arr;
-   int last_is_num = 0;
-   while(*arg) {
-     if(*arg >= '0' && *arg <= '9'){
-       if(p == arr && !last_is_num)
-         *p = 0;
-       *p = (*p) * 10 + *arg - '0';
-       last_is_num = 1;
-     }
-     else{
-       if(last_is_num){
-         ++p;
-         if(p - arr >= max)
-           return max;
-       }
-       last_is_num = 0;
-     }
-     ++arg;
-   }
-   if(last_is_num)
-     ++p;
-   return p - arr;
- }
- 
- struct arguments{
-     vga_ball_circle_t circle;
-     vga_ball_dir_t dir;
-     vga_ball_color_t c_color;
-     vga_ball_color_t bg_color;
-     int c_random_color;
-   };
- 
- static char args_doc[] = "-x StartX -y StartY -u DirectionX -v DirectionY";
- static char doc[] = "A bouncing ball program.";
- static struct argp_option options[] = {
- {"startx" , 'x' , "STARTX" , 0 , "start x coordinate of circle"},
- {"starty" , 'y' , "STARTY" , 0 , "start y coordinate of circle"},
- {"dx" , 'u' , "DELTAX" , 0 , "start x direction"},
- {"dy" , 'v' , "DELTAY" , 0 , "start y direction"},
- {"radius" , 'r' , "RADIUS" , 0 , "circle radius"},
- {"speed" , 's' , "SPEED" , 0 , "circle speed"},
- {"color" , 'c' , "R,G,B" , 0 , "circle color"},
- {"background" , 'b' , "R,G,B" , 0 , "background color"},
- {0}
- };
- 
- static error_t parse_opt(int key, char *arg, struct argp_state *state) {
-     struct arguments *args = state->input;
-     int arr[3] = {0};
-     switch (key) {
-     case 'x': args->circle.x = atoi(arg); break;
-     case 'y': args->circle.y = atoi(arg); break;
-     case 'u': args->dir.vx = atoi(arg); break;
-     case 'v': args->dir.vy = atoi(arg); break;
-     case 'r': args->circle.radius = atoi(arg); break;
-     case 's': 
-       args->dir.speed = atof(arg);
-       if(args->dir.speed<=0){
-         argp_failure(state, 1, 0, "invalid argument for -s. See --help for more information");
-         exit(ARGP_ERR_UNKNOWN);
-       }
-       break;
-     case 'c':
-       if(parse_nums(arg,arr,3)<3){
-         argp_failure(state, 1, 0, "invalid argument for -c. See --help for more information");
-         exit(ARGP_ERR_UNKNOWN);
-       }
-       if(arr[0]>255||arr[1]>255||arr[2]>255){
-         argp_failure(state, 1, 0, "invalid R,G,B for -c. See --help for more information");
-         exit(ARGP_ERR_UNKNOWN);
-       }
-       args->c_random_color = 0;
-       args->c_color.red = arr[0];
-       args->c_color.green = arr[1];
-       args->c_color.blue = arr[2];
-       printf("Circle %u %u %u\n",args->c_color.red,args->c_color.green,args->c_color.blue);
-       break;
-     case 'b':
-       if(parse_nums(arg,arr,3)<3){
-         argp_failure(state, 1, 0, "invalid argument for -b. See --help for more information");
-         exit(ARGP_ERR_UNKNOWN);
-       }
-       if(arr[0]>255||arr[1]>255||arr[2]>255){
-         argp_failure(state, 1, 0, "invalid R,G,B for -b. See --help for more information");
-         exit(ARGP_ERR_UNKNOWN);
-       }
-       args->bg_color.red = arr[0];
-       args->bg_color.green = arr[1];
-       args->bg_color.blue = arr[2];
-       printf("Background %u %u %u\n",args->bg_color.red,args->bg_color.green,args->bg_color.blue);
-       break;
-     case ARGP_KEY_END:
-       if((2*args->circle.radius+abs(args->dir.dx)>640)||
-          (2*args->circle.radius+abs(args->dir.dy)>480)){
-         argp_failure(state, 1, 0, "invalid argment -u/-v/-r too large. See --help for more information");
-         exit(ARGP_ERR_UNKNOWN);
-       }
-       break;
-     default: return ARGP_ERR_UNKNOWN;
-     }
-     return 0;
- }
- 
- void calc_next_bound(vga_ball_circle_t *circle, vga_ball_dir_t *dir)
- {
-   int a,b;
-   a=dir->vx>0?(640-circle->radius-circle->x):(circle->radius-circle->x);
-   b=dir->vy>0?(480-circle->radius-circle->y):(circle->radius-circle->y);
-   a=abs(a*dir->vy);
-   b=abs(b*dir->vx);
-   if(a>b){
-     if(dir->vy>0)
-       dir->next_bound = 4;
-     else
-       dir->next_bound = 3;
-   }
-   else {
-     if(dir->vx>0)
-       dir->next_bound = 2;
-     else
-       dir->next_bound = 1;
-   }
-   dir->corner = (a==b);
- }
- 
- /*
-  * Fast inverse square root function.
-  * https://github.com/RuralAnemone/quake-3-fast-inverse-sqrt/blob/main/src/main-og.c
-  */
- float Q_rsqrt(float number) {
-   long i;
-   float x2, y;
-   const float threehalfs = 1.5F;
- 
-   x2 = number * 0.5;
-   y = number;
-   i = * (long *) &y;						// evil floating point bit hack
-   i = 0x5f3759df - (i >> 1);				// what the fuck?
-   y = * (float *) &i;
-   y = y * (threehalfs - (x2 * y * y));	// 1st iteration
- 
-   return y;
- }
- 
- void reset_circle(vga_ball_circle_t *circle, vga_ball_dir_t *dir)
- {
-   // Left bound
-   if(circle->x<circle->radius){
-     circle->x=circle->radius;
-     dir->dx = abs(dir->dx);
-   }
-   // Right bound
-   if(circle->x>640-circle->radius){
-     circle->x=640-circle->radius;
-     dir->dx = -abs(dir->dx);
-   }
-   // Up bound
-   if(circle->y<circle->radius){
-     circle->y=circle->radius;
-     dir->dy = abs(dir->dy);
-   }
-   // Low bound
-   if(circle->y>480-circle->radius){
-     circle->y=480-circle->radius;
-     dir->dy = -abs(dir->dy);
-   }
-   dir->next_bound=0;
- 
-   float rlen = Q_rsqrt(dir->vx*dir->vx+dir->vy*dir->vy);
-   dir->vx*=rlen*dir->speed;
-   dir->vy*=rlen*dir->speed;
- 
-   calc_next_bound(circle,dir);
- }
- 
- void update_circle(vga_ball_circle_t *circle, vga_ball_dir_t *dir)
- {
-   dir->fx += dir->vx;
-   dir->fy += dir->vy;
-   dir->dx = dir->fx;
-   dir->dy = dir->fy;
-   dir->fx -= dir->dx;
-   dir->fy -= dir->dy;
-   switch(dir->next_bound){
-     case 1: // Reach Left
-       if((circle->x+dir->vx)<circle->radius){
-         // From calc_next_dir, we are sure that dir->dx!=0
-         circle->y += (float)(circle->radius-circle->x)/dir->vx*dir->vy;
-         circle->x = circle->radius;
-         printf("Reach left %d %d.\n",circle->x,circle->y);
-         if(dir->corner){
-           dir->vx = -dir->vx;
-           dir->vy = -dir->vy;
-         }
-         else
-           dir->vx = abs(dir->vx);
-         calc_next_bound(circle,dir);
-       }else{
-         circle->x += dir->dx;
-         circle->y += dir->dy;
-       }
-       break;
-     case 2: // Reach Right
-       if((circle->x+dir->vx)>(640-circle->radius)){
-         circle->y += (640.0-circle->radius-circle->x)/dir->vx*dir->vy;
-         circle->x = 640-circle->radius;
-         printf("Reach right %d %d.\n",circle->x,circle->y);
-         if(dir->corner){
-           dir->vx = -dir->vx;
-           dir->vy = -dir->vy;
-         }
-         else
-           dir->vx = -abs(dir->vx);
-         calc_next_bound(circle,dir);
-       }else{
-         circle->x += dir->dx;
-         circle->y += dir->dy;
-       }
-       break;
-     case 3: // Reach Top
-       if((circle->y+dir->vy)<circle->radius){
-         circle->x += (float)(circle->radius-circle->y)/dir->vy*dir->vx;
-         circle->y = circle->radius;
-         printf("Reach top %d %d.\n",circle->x,circle->y);
-         if(dir->corner){
-           dir->vx = -dir->vx;
-           dir->vy = -dir->vy;
-         }
-         else
-           dir->vy = abs(dir->vy);
-         calc_next_bound(circle,dir);
-       }else{
-         circle->x += dir->dx;
-         circle->y += dir->dy;
-       }
-       break;
-     case 4: // Reach Bottom
-       if((circle->y+dir->vy)>(480-circle->radius)){
-         // From calc_next_dir, we are sure that dir->dx!=0
-         circle->x += (480.0-circle->radius-circle->y)/dir->vy*dir->vx;
-         circle->y = 480-circle->radius;
-         printf("Reach bottom %d %d.\n",circle->x,circle->y);
-         if(dir->corner){
-           dir->vx = -dir->vx;
-           dir->vy = -dir->vy;
-         }
-         else
-           dir->vy = -abs(dir->vy);
-         calc_next_bound(circle,dir);
-       }else{
-         circle->x += dir->dx;
-         circle->y += dir->dy;
-       }
-       break;
-     default:
-       break;    
-   }
- }
- 
- struct argp argp = {options, parse_opt, args_doc, doc};
- vga_ball_dir_t dir;
- 
- int main(int argc, char **argv)
- {
-   vga_ball_arg_t vla;
-   int i;
- 
-   struct arguments args;
-   args.circle.radius=16;
-   args.dir.dx=0;
-   args.dir.speed=1.5;
-   args.dir.dy=0;
-   args.c_random_color = 1;
-   args.bg_color.red=args.bg_color.green=args.bg_color.blue=0xff;
-   args.c_color.red=0xff;
-   args.c_color.green=args.c_color.blue=0;
-   argp_parse(&argp,argc,argv,0,0,&args);
-   vga_ball_circle_t circle = args.circle;
-   dir = args.dir;
-   vla.c_color = args.c_color;
-   vla.bg_color = args.bg_color;
- 
-   static const char filename[] = "/dev/vga_ball";
- 
-   static const vga_ball_color_t colors[] = {
-     { 0xff, 0x00, 0x00 }, /* Red */
-     { 0x00, 0xff, 0x00 }, /* Green */
-     { 0x00, 0x00, 0xff }, /* Blue */
-     { 0xff, 0xff, 0x00 }, /* Yellow */
-     { 0x00, 0xff, 0xff }, /* Cyan */
-     { 0xff, 0x00, 0xff }, /* Magenta */
-     { 0x80, 0x80, 0x80 }, /* Gray */
-     { 0x00, 0x00, 0x00 }, /* Black */
-     { 0xff, 0xff, 0xff }  /* White */
-   };
- 
- # define COLORS 9
- 
-   printf("VGA ball Userspace program started\n");
- 
-   if ( (vga_ball_fd = open(filename, O_RDWR)) == -1) {
-     fprintf(stderr, "could not open %s\n", filename);
-     return -1;
-   }
- 
-   reset_circle(&circle,&dir);
-   vla.circle = circle;
- 
-   printf("initial state: ");
-   print_background_color();
- 
-   int j = 0;
-   int dr = 5;
- 
-   for (i = 0 ; i < 24 ; i++) {
-     j++;
-     if (args.c_random_color) {
-       vla.c_color = colors[i % COLORS ];
-     } 
-     vla.circle = circle;
-     set_background_color(&colors[i % COLORS ]);
-     print_background_color();
-     if(circle.radius>100)
-       dr=-5;
-     if(circle.radius<10)
-       dr=5;
-     update_circle(&circle, &dir);
-     usleep(400000);
-   }
-   
-   printf("VGA BALL Userspace program terminating\n");
-   return 0;
- }
- 
+#include <stdio.h>
+#include "vga_ball.h"
+#include <sys/ioctl.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <string.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <time.h>
+
+/* File descriptor for the VGA ball device */
+int vga_ball_fd;
+
+/**
+ * Read and print the current background color
+ * Uses the VGA_BALL_READ_BACKGROUND ioctl command
+ */
+void print_background_color() {
+  vga_ball_arg_t vla;
+  
+  /* Call ioctl to read the background color from the device */
+  if (ioctl(vga_ball_fd, VGA_BALL_READ_BACKGROUND, &vla)) {
+      perror("ioctl(VGA_BALL_READ_BACKGROUND) failed");
+      return;
+  }  
+  /* check what color is now */
+  printf("Background color: %02x %02x %02x\n",
+         vla.background.red, vla.background.green, vla.background.blue);
+}
+
+/**
+ * Set the background color
+ * Uses the VGA_BALL_WRITE_BACKGROUND ioctl command
+ *
+ */
+void set_background_color(const vga_ball_color_t *c)
+{
+  vga_ball_arg_t vla;
+  
+  /* Copy the color to our argument structure */
+  vla.background = *c;
+  
+  /* Call ioctl to write the background color to the device */
+  if (ioctl(vga_ball_fd, VGA_BALL_WRITE_BACKGROUND, &vla)) {
+      perror("ioctl(VGA_BALL_SET_BACKGROUND) failed");
+      return;
+  }
+}
+
+
+void print_ball_position() { // record the ball position
+  vga_ball_arg_t vla;
+  
+  /* Call ioctl to read the ball position from the device */
+  if (ioctl(vga_ball_fd, VGA_BALL_READ_POSITION, &vla)) {
+      perror("ioctl(VGA_BALL_READ_POSITION) failed");
+      return;
+  }
+  
+  /* Print the current ball position */
+  printf("Ball position: x=%d, y=%d\n", vla.position.x, vla.position.y);
+}
+
+/**
+ * Set the ball position
+ * Uses the VGA_BALL_WRITE_POSITION ioctl command
+ */
+void set_ball_position(unsigned short x, unsigned short y)
+{
+  vga_ball_arg_t vla;
+  
+  /* Set the position in our argument structure */
+  vla.position.x = x;
+  vla.position.y = y;
+  
+  /* Call ioctl to write the ball position to the device */
+  if (ioctl(vga_ball_fd, VGA_BALL_WRITE_POSITION, &vla)) {
+      perror("ioctl(VGA_BALL_WRITE_POSITION) failed");
+      return;
+  }
+  printf("Ball position: x=%d, y=%d\n", vla.position.x, vla.position.y);
+
+}
+
+/**
+ * Main function - opens the device and demonstrates ball movement
+ */
+int main()
+{
+  vga_ball_arg_t vla;
+  int i;
+  static const char filename[] = "/dev/vga_ball";  /* Device file name */
+
+  /* Array of predefined colors we'll cycle through */
+  static const vga_ball_color_t colors[] = {
+    { 0xff, 0x00, 0x00 }, /* Red */
+    { 0x00, 0xff, 0x00 }, /* Green */
+    { 0x00, 0x00, 0xff }, /* Blue */
+    { 0xff, 0xff, 0x00 }, /* Yellow */
+    { 0x00, 0xff, 0xff }, /* Cyan */
+    { 0xff, 0x00, 0xff }, /* Magenta */
+    { 0x80, 0x80, 0x80 }, /* Gray */
+    { 0x00, 0x00, 0x00 }, /* Black */
+    { 0xff, 0xff, 0xff }  /* White */
+  };
+
+  #define COLORS 9  /* Number of colors in the array */
+
+  /* Ball movement variables */
+  unsigned short ball_x = 400;  /* Initial x position */
+  unsigned short ball_y = 300;  /* Initial y position */
+  short vel_x = 2;              /* X velocity (pixels per frame) */
+  short vel_y = 2;              /* Y velocity (pixels per frame) */
+  
+  /* Screen boundaries */
+  const unsigned short X_MAX = 639;        /* Maximum x coordinate */
+  const unsigned short Y_MAX = 479;         /* Maximum y coordinate */
+  const unsigned short BALL_SIZE = 30;      /* Ball radius in pixels */
+
+  printf("VGA ball Userspace program started\n");
+
+  /* Open the device file */
+  if ((vga_ball_fd = open(filename, O_RDWR)) == -1) {
+    fprintf(stderr, "could not open %s\n", filename);
+    return -1;
+  }
+
+  /* Print the initial state */
+  printf("Initial state: \n");
+  print_background_color();
+  print_ball_position();
+  
+  /* Set a random background color */
+  srand(time(NULL));  /* Initialize random number generator */
+  int color_index = rand() % COLORS;
+ // set_background_color(&colors[color_index]);
+  print_background_color();
+  
+  /* Animation loop - ball will bounce at boundaries */
+  printf("Starting animation, press Ctrl+C to exit...\n");
+
+  //this is the main loop that will run the bounce ball
+  while (1) {
+    //  Update ball position based on current velocity 
+    ball_x += vel_x;
+    ball_y += vel_y;
+    
+    // Check for collision with horizontal boundaries 
+    if (ball_x <= BALL_SIZE || ball_x >= X_MAX - BALL_SIZE) {
+      vel_x = -vel_x;  // Reverse x direction velocity 
+      
+      // Change background color randomly on collision 
+      color_index = rand() % COLORS;
+      set_background_color(&colors[color_index]);
+    }
+    
+    // Check for collision with vertical boundaries 
+    if (ball_y <= BALL_SIZE || ball_y >= Y_MAX - BALL_SIZE) {
+      vel_y = -vel_y;  // Reverse y direction velocity 
+      
+      // Change background color randomly on collision 
+      color_index = rand() % COLORS;
+      set_background_color(&colors[color_index]);
+      //but I dont check the corner case,it should be added? i am not sure about this
+    }
+    
+    // Update the ball position in hardware 
+    set_ball_position(ball_x, ball_y);
+    
+    // Sleep to maintain approximately 60 frames per second 
+    usleep(25000);  // 1/60 second in microseconds 
+  }
+  
+  printf("VGA BALL Userspace program terminating\n");
+  return 0;
+}
