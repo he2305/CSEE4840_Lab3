@@ -1,15 +1,16 @@
-/* * Device driver for the VGA video generator
+/*
+ * Device driver for the VGA BALL Emulator
  *
  * A Platform device implemented using the misc subsystem
  *
- * Stephen A. Edwards
- * Columbia University
+ * Richard Townsend
+ * Yipeng Huang
  *
- * References:
- * Linux source: Documentation/driver-model/platform.txt
- *               drivers/misc/arm-charlcd.c
- * http://www.linuxforu.com/tag/linux-device-drivers/
- * http://free-electrons.com/docs/
+ * 
+ * 
+ * 
+ * 
+ * 
  *
  * "make" to build
  * insmod vga_ball.ko
@@ -35,110 +36,64 @@
 
 #define DRIVER_NAME "vga_ball"
 
-/* Device registers */
-#define CIR_XH(x) ((x) + 0)
-#define CIR_XL(x) ((x) + 1)
-#define CIR_YH(x) ((x) + 2)
-#define CIR_YL(x) ((x) + 3)
-#define CIR_R(x)  ((x) + 4)
-#define CIR_RED(x) ((x) + 5)
-#define CIR_GREEN(x) ((x) + 6)
-#define CIR_BLUE(x) ((x) + 7)
-#define BG_RED(x) ((x) + 8)
-#define BG_GREEN(x) ((x) + 9)
-#define BG_BLUE(x) ((x) + 10)
-
-
 /*
  * Information about our device
  */
 struct vga_ball_dev {
-	struct resource res; /* Resource: our registers */
+	resource_size_t start; /* Address of start of registers */
+	resource_size_t size;
 	void __iomem *virtbase; /* Where registers can be accessed in memory */
-        vga_ball_color_t c_color;
-		vga_ball_color_t bg_color;
-		//vga_ball_rect_t rect;
-		vga_ball_circle_t circle;
+	u16 x, y; /* Coordinates */
 } dev;
 
 /*
- * Write segments of a single digit
- * Assumes digit is in range and the device information has been set up
+ * Write coordinates of the center of the ball 
+ * Assumes coordinates are in range and the device information has been set up
  */
-static void write_circle_color(vga_ball_color_t *color)
+static void write_coordinate(u16 x, u16 y)
 {
-	iowrite8(color->red, CIR_RED(dev.virtbase) );
-	iowrite8(color->green, CIR_GREEN(dev.virtbase) );
-	iowrite8(color->blue, CIR_BLUE(dev.virtbase) );
-	dev.c_color = *color;
+	iowrite16(x, dev.virtbase);
+	iowrite16(y, dev.virtbase+2);
+	dev.x = x;
+	dev.y = y;
 }
-
-/*
- * Write segments of a single digit
- * Assumes digit is in range and the device information has been set up
- */
-static void write_bg_color(vga_ball_color_t *color)
-{
-	iowrite8(color->red, BG_RED(dev.virtbase) );
-	iowrite8(color->green, BG_GREEN(dev.virtbase) );
-	iowrite8(color->blue, BG_BLUE(dev.virtbase) );
-	dev.bg_color = *color;
-}
-
-static void write_circle(vga_ball_circle_t *circle)
-{
-    /* Write circle x coordinate in two bytes */
-    iowrite8((unsigned char)((circle->x >> 8) & 0xFF), CIR_XH(dev.virtbase));
-    iowrite8((unsigned char)(circle->x & 0xFF), CIR_XL(dev.virtbase));
-    /* Write circle y coordinate in two bytes */
-    iowrite8((unsigned char)((circle->y >> 8) & 0xFF), CIR_YH(dev.virtbase));
-    iowrite8((unsigned char)(circle->y & 0xFF), CIR_YL(dev.virtbase));
-    /* Write circle radius */
-    iowrite8(circle->radius, CIR_R(dev.virtbase));
-    dev.circle = *circle;
-}
-
 
 /*
  * Handle ioctl() calls from userspace:
- * Read or write the segments on single digits.
+ * Read or write the coordinates.
  * Note extensive error checking of arguments
  */
 static long vga_ball_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 {
-    vga_ball_arg_t vla;
-    switch (cmd) {
-    case VGA_BALL_WRITE:
-        if (copy_from_user(&vla, (vga_ball_arg_t *) arg, sizeof(vga_ball_arg_t)))
-            return -EACCES;
-        /* Write only the circle color and background color */
-        write_circle_color(&vla.c_color);
-        write_bg_color(&vla.bg_color);
-        break;
+	vga_ball_arg_t vla;
 
-    case VGA_BALL_READ:
-        vla.c_color = dev.c_color;
-        vla.circle = dev.circle;
-        vla.bg_color = dev.bg_color;
-        if (copy_to_user((vga_ball_arg_t *) arg, &vla, sizeof(vga_ball_arg_t)))
-            return -EACCES;
-        break;
+	switch (cmd) {
+	case VGA_BALL_WRITE_COORD:
+		if (copy_from_user(&vla, (vga_ball_arg_t *) arg,
+				   sizeof(vga_ball_arg_t)))
+			return -EACCES;
+		if (vla.y > 640 || vla.x > 480 || vla.x < 0 || vla.y < 0)
+			return -EINVAL;
+		write_coordinate(vla.x, vla.y);
+		break;
 
-    case VGA_BALL_SET_CIRCLE:
-    {
-        vga_ball_circle_t circle;
-        if (copy_from_user(&circle, (vga_ball_circle_t *) arg, sizeof(vga_ball_circle_t)))
-            return -EACCES;
-        write_circle(&circle);
-        break;
-    }
+	case VGA_BALL_READ_COORD:
+		if (copy_from_user(&vla, (vga_ball_arg_t *) arg,
+				   sizeof(vga_ball_arg_t)))
+			return -EACCES;
+		vla.x = dev.x;
+		vla.y = dev.y;
+		if (copy_to_user((vga_ball_arg_t *) arg, &vla,
+				 sizeof(vga_ball_arg_t)))
+			return -EACCES;
+		break;
 
-    default:
-        return -EINVAL;
-    }
-    return 0;
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
 }
-
 
 /* The operations our device knows how to do */
 static const struct file_operations vga_ball_fops = {
@@ -159,40 +114,41 @@ static struct miscdevice vga_ball_misc_device = {
  */
 static int __init vga_ball_probe(struct platform_device *pdev)
 {
-        vga_ball_color_t beige = { 0xf9, 0xe4, 0xb7 };
 	int ret;
+	struct resource res;
+
 
 	/* Register ourselves as a misc device: creates /dev/vga_ball */
 	ret = misc_register(&vga_ball_misc_device);
 
 	/* Get the address of our registers from the device tree */
-	ret = of_address_to_resource(pdev->dev.of_node, 0, &dev.res);
+	ret = of_address_to_resource(pdev->dev.of_node, 0, &res);
 	if (ret) {
 		ret = -ENOENT;
 		goto out_deregister;
 	}
 
 	/* Make sure we can use these registers */
-	if (request_mem_region(dev.res.start, resource_size(&dev.res),
+	if (request_mem_region(res.start, resource_size(&res),
 			       DRIVER_NAME) == NULL) {
 		ret = -EBUSY;
 		goto out_deregister;
 	}
 
-	/* Arrange access to our registers */
+	dev.start = res.start;
+	dev.size = resource_size(&res);
+
+	/* Arrange access to these registers */
 	dev.virtbase = of_iomap(pdev->dev.of_node, 0);
 	if (dev.virtbase == NULL) {
 		ret = -ENOMEM;
 		goto out_release_mem_region;
 	}
-        
-	/* Set an initial color */
-        write_circle_color(&beige);
 
 	return 0;
 
 out_release_mem_region:
-	release_mem_region(dev.res.start, resource_size(&dev.res));
+	release_mem_region(res.start, resource_size(&res));
 out_deregister:
 	misc_deregister(&vga_ball_misc_device);
 	return ret;
@@ -202,7 +158,7 @@ out_deregister:
 static int vga_ball_remove(struct platform_device *pdev)
 {
 	iounmap(dev.virtbase);
-	release_mem_region(dev.res.start, resource_size(&dev.res));
+	release_mem_region(dev.start, dev.size);
 	misc_deregister(&vga_ball_misc_device);
 	return 0;
 }
@@ -210,7 +166,7 @@ static int vga_ball_remove(struct platform_device *pdev)
 /* Which "compatible" string(s) to search for in the Device Tree */
 #ifdef CONFIG_OF
 static const struct of_device_id vga_ball_of_match[] = {
-	{ .compatible = "csee4840,vga_ball-1.0" },
+	{ .compatible = "altr,vga_ball" },
 	{},
 };
 MODULE_DEVICE_TABLE(of, vga_ball_of_match);
@@ -233,7 +189,7 @@ static int __init vga_ball_init(void)
 	return platform_driver_probe(&vga_ball_driver, vga_ball_probe);
 }
 
-/* Calball when the module is unloaded: release resources */
+/* Called when the module is unloaded: release resources */
 static void __exit vga_ball_exit(void)
 {
 	platform_driver_unregister(&vga_ball_driver);
@@ -244,5 +200,5 @@ module_init(vga_ball_init);
 module_exit(vga_ball_exit);
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Stephen A. Edwards, Columbia University");
-MODULE_DESCRIPTION("VGA ball driver");
+MODULE_AUTHOR("Richard Townsend, Yipeng Huang");
+MODULE_DESCRIPTION("VGA Ball Emulator");
