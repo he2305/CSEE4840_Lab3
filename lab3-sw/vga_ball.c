@@ -55,19 +55,16 @@ struct vga_ball_dev {
 } dev;
 
 /*
- * Write background color
+ * Write segments of a single digit
+ * Assumes digit is in range and the device information has been set up
  */
-static void write_background(vga_ball_color_t *background)
-{
+static void write_background(vga_ball_color_t *background) {
 	iowrite8(background->red, BG_RED(dev.virtbase));
 	iowrite8(background->green, BG_GREEN(dev.virtbase));
 	iowrite8(background->blue, BG_BLUE(dev.virtbase));
 	dev.background = *background;
 }
 
-/*
- * Write ball position
- */
 static void write_position(vga_ball_position_t *position)
 { //maybe we can use iowrite16 instead of iowrite8 ?
 	iowrite8((unsigned char)(position->x & 0xFF), BALL_X_L(dev.virtbase));
@@ -76,8 +73,6 @@ static void write_position(vga_ball_position_t *position)
 	iowrite8((unsigned char)((position->y >> 8) & 0x03), BALL_Y_H(dev.virtbase));
 	dev.position = *position;
 	printk(KERN_INFO "%d, %d \n", position->x, position->y);
-
-
 }
 
 /*
@@ -142,10 +137,9 @@ static struct miscdevice vga_ball_misc_device = {
  * Initialization code: get resources (registers) and display
  * a welcome message
  */
-static int __init vga_ball_probe(struct platform_device *pdev)
-{
-    vga_ball_color_t beige = { 0xf9, 0xe4, 0xb7 };
-    vga_ball_position_t init_pos = { 400, 300 }; // define the initial position of the ball
+static int __init vga_ball_probe(struct platform_device *pdev) {
+	vga_ball_position_t init_pos = {256, 128};
+    vga_ball_color_t beige = {0xf9, 0xe4, 0xb7};
 	int ret;
 
 	/* Register ourselves as a misc device: creates /dev/vga_ball */

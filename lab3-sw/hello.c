@@ -17,90 +17,78 @@
 #include <stdlib.h>
 #include <time.h>
 
-/* File descriptor for the VGA ball device */
 int vga_ball_fd;
 
-/**
- * Read and print the current background color
- * Uses the VGA_BALL_READ_BACKGROUND ioctl command
- */
+/* Read and print the background color */
 void print_background_color() {
   vga_ball_arg_t vla;
   
-  /* Call ioctl to read the background color from the device */
   if (ioctl(vga_ball_fd, VGA_BALL_READ_BACKGROUND, &vla)) {
       perror("ioctl(VGA_BALL_READ_BACKGROUND) failed");
       return;
   }  
-  /* check what color is now */
+
   printf("Background color: %02x %02x %02x\n",
-         vla.background.red, vla.background.green, vla.background.blue);
+    vla.background.red, vla.background.green, vla.background.blue);
 }
 
-/**
- * Set the background color
- * Uses the VGA_BALL_WRITE_BACKGROUND ioctl command
- *
- */
-void set_background_color(const vga_ball_color_t *c)
-{
+/* Set the background color */
+void set_background_color(const vga_ball_color_t *c) {
   vga_ball_arg_t vla;
-  
-  /* Copy the color to our argument structure */
   vla.background = *c;
-  
-  /* Call ioctl to write the background color to the device */
+
   if (ioctl(vga_ball_fd, VGA_BALL_WRITE_BACKGROUND, &vla)) {
-      perror("ioctl(VGA_BALL_SET_BACKGROUND) failed");
-      return;
+    perror("ioctl(VGA_BALL_SET_BACKGROUND) failed");
+    return;
   }
+
+  printf("Background color: %02x %02x %02x\n",
+    vla.background.red, vla.background.green, vla.background.blue);
 }
 
-
-void print_ball_position() { // record the ball position
+/* Read and print the ball position */
+void print_ball_position() {
   vga_ball_arg_t vla;
   
-  /* Call ioctl to read the ball position from the device */
   if (ioctl(vga_ball_fd, VGA_BALL_READ_POSITION, &vla)) {
       perror("ioctl(VGA_BALL_READ_POSITION) failed");
       return;
   }
   
-  /* Print the current ball position */
-  printf("Ball position: x=%d, y=%d\n", vla.position.x, vla.position.y);
+  printf("Ball position: x = %d, y = %d\n", vla.position.x, vla.position.y);
 }
 
-/**
- * Set the ball position
- * Uses the VGA_BALL_WRITE_POSITION ioctl command
- */
-void set_ball_position(unsigned short x, unsigned short y)
-{
+/* Set the ball position */
+void set_ball_position(unsigned short x_pos, unsigned short y_pos) {
   vga_ball_arg_t vla;
   
-  /* Set the position in our argument structure */
-  vla.position.x = x;
-  vla.position.y = y;
+  vla.position.x = x_pos;
+  vla.position.y = y_pos;
   
-  /* Call ioctl to write the ball position to the device */
   if (ioctl(vga_ball_fd, VGA_BALL_WRITE_POSITION, &vla)) {
       perror("ioctl(VGA_BALL_WRITE_POSITION) failed");
       return;
   }
-  printf("Ball position: x=%d, y=%d\n", vla.position.x, vla.position.y);
 
+  printf("Ball position: x = %d, y = %d\n", vla.position.x, vla.position.y);
 }
 
-/**
- * Main function - opens the device and demonstrates ball movement
- */
 int main()
 {
   vga_ball_arg_t vla;
   int i;
-  static const char filename[] = "/dev/vga_ball";  /* Device file name */
+  static const char filename[] = "/dev/vga_ball";
 
-  /* Array of predefined colors we'll cycle through */
+  unsigned short ball_pos_x = 256;  /* Initial x position */
+  unsigned short ball_pos_y = 128;  /* Initial y position */
+  short ball_vel_x = 2;              /* X velocity (pixels per frame) */
+  short ball_vel_y = 2;              /* Y velocity (pixels per frame) */
+  
+  /* Screen boundaries */
+  const unsigned short X_MAX = 639;        /* Maximum x coordinate */
+  const unsigned short Y_MAX = 479;         /* Maximum y coordinate */
+  const unsigned short BALL_SIZE = 30;      /* Ball radius in pixels */
+
   static const vga_ball_color_t colors[] = {
     { 0xff, 0x00, 0x00 }, /* Red */
     { 0x00, 0xff, 0x00 }, /* Green */
@@ -110,74 +98,70 @@ int main()
     { 0xff, 0x00, 0xff }, /* Magenta */
     { 0x80, 0x80, 0x80 }, /* Gray */
     { 0x00, 0x00, 0x00 }, /* Black */
-    { 0xff, 0xff, 0xff }  /* White */
+    { 0xff, 0xff, 0xff }, /* White */
+    { 0xff, 0xa5, 0x00 }, /* Orange */
+    { 0x80, 0x00, 0x80 }, /* Purple */
+    { 0xa5, 0x2a, 0x2a }, /* Brown */
+    { 0xff, 0xc0, 0xcb }, /* Pink */
+    { 0x32, 0xcd, 0x32 }, /* Lime Green */
+    { 0x80, 0x80, 0x00 }, /* Olive */
+    { 0x00, 0x80, 0x80 }, /* Teal */
+    { 0x00, 0x00, 0x80 }, /* Navy */
+    { 0x80, 0x00, 0x00 }, /* Maroon */
+    { 0xff, 0xd7, 0x00 }, /* Gold */
+    { 0xc0, 0xc0, 0xc0 }, /* Silver */
+    { 0x4b, 0x00, 0x82 }, /* Indigo */
+    { 0xee, 0x82, 0xee }, /* Violet */
+    { 0xf0, 0xe6, 0x8c }, /* Khaki */
+    { 0xfa, 0x80, 0x72 }, /* Salmon */
+    { 0x40, 0xe0, 0xd0 }, /* Turquoise */
+    { 0xff, 0x7f, 0x50 }, /* Coral */
+    { 0xe6, 0xe6, 0xfa }, /* Lavender */
+    { 0x98, 0xff, 0x98 }, /* Mint Green */
+    { 0xf5, 0xf5, 0xdc }, /* Beige */
+    { 0xd2, 0x69, 0x1e }  /* Chocolate */
   };
 
-  #define COLORS 9  /* Number of colors in the array */
-
-  /* Ball movement variables */
-  unsigned short ball_x = 400;  /* Initial x position */
-  unsigned short ball_y = 300;  /* Initial y position */
-  short vel_x = 2;              /* X velocity (pixels per frame) */
-  short vel_y = 2;              /* Y velocity (pixels per frame) */
-  
-  /* Screen boundaries */
-  const unsigned short X_MAX = 639;        /* Maximum x coordinate */
-  const unsigned short Y_MAX = 479;         /* Maximum y coordinate */
-  const unsigned short BALL_SIZE = 30;      /* Ball radius in pixels */
+  #define COLORS 30
 
   printf("VGA ball Userspace program started\n");
 
-  /* Open the device file */
   if ((vga_ball_fd = open(filename, O_RDWR)) == -1) {
     fprintf(stderr, "could not open %s\n", filename);
     return -1;
   }
 
-  /* Print the initial state */
   printf("Initial state: \n");
   print_background_color();
   print_ball_position();
   
-  /* Set a random background color */
-  srand(time(NULL));  /* Initialize random number generator */
-  int color_index = rand() % COLORS;
- // set_background_color(&colors[color_index]);
+  srand(time(NULL));
+  int rand_color = rand() % COLORS;
   print_background_color();
   
-  /* Animation loop - ball will bounce at boundaries */
-  printf("Starting animation, press Ctrl+C to exit...\n");
+  printf("Starting animation\n");
 
-  //this is the main loop that will run the bounce ball
   while (1) {
-    //  Update ball position based on current velocity 
-    ball_x += vel_x;
-    ball_y += vel_y;
+    ball_pos_x += ball_vel_x;
+    ball_pos_y += ball_vel_y;
     
-    // Check for collision with horizontal boundaries 
-    if (ball_x <= BALL_SIZE || ball_x >= X_MAX - BALL_SIZE) {
-      vel_x = -vel_x;  // Reverse x direction velocity 
+    if (ball_pos_x <= BALL_SIZE || ball_pos_x >= X_MAX - BALL_SIZE) {
+      ball_vel_x = -ball_vel_x;
       
-      // Change background color randomly on collision 
-      color_index = rand() % COLORS;
-      set_background_color(&colors[color_index]);
+      rand_color = rand() % COLORS;
+      set_background_color(&colors[rand_color]);
     }
     
-    // Check for collision with vertical boundaries 
-    if (ball_y <= BALL_SIZE || ball_y >= Y_MAX - BALL_SIZE) {
-      vel_y = -vel_y;  // Reverse y direction velocity 
+    if (ball_pos_y <= BALL_SIZE || ball_pos_y >= Y_MAX - BALL_SIZE) {
+      ball_vel_y = -ball_vel_y;
       
-      // Change background color randomly on collision 
-      color_index = rand() % COLORS;
-      set_background_color(&colors[color_index]);
-      //but I dont check the corner case,it should be added? i am not sure about this
+      rand_color = rand() % COLORS;
+      set_background_color(&colors[rand_color]);
     }
     
-    // Update the ball position in hardware 
-    set_ball_position(ball_x, ball_y);
+    set_ball_position(ball_pos_x, ball_pos_y);
     
-    // Sleep to maintain approximately 60 frames per second 
-    usleep(25000);  // 1/60 second in microseconds 
+    usleep(25000);
   }
   
   printf("VGA BALL Userspace program terminating\n");
