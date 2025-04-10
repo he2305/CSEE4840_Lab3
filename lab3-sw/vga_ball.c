@@ -43,6 +43,7 @@
 #define BALL_X_H(x) ((x)+4)
 #define BALL_Y_L(x) ((x)+5)
 #define BALL_Y_H(x) ((x)+6)
+#define BALL_RADIUS(x) ((x)+7)
 
 /*
  * Information about our device
@@ -65,8 +66,7 @@ static void write_background(vga_ball_color_t *background) {
 	dev.background = *background;
 }
 
-static void write_position(vga_ball_position_t *position)
-{ //maybe we can use iowrite16 instead of iowrite8 ?
+static void write_position(vga_ball_position_t *position) {
 	iowrite8((unsigned char)(position->x & 0xFF), BALL_X_L(dev.virtbase));
 	iowrite8((unsigned char)((position->x >> 8) & 0x07), BALL_X_H(dev.virtbase));
 	iowrite8((unsigned char)(position->y & 0xFF), BALL_Y_L(dev.virtbase));
@@ -80,8 +80,7 @@ static void write_position(vga_ball_position_t *position)
  * Read or write the segments on single digits.
  * Note extensive error checking of arguments
  */
-static long vga_ball_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
-{
+static long vga_ball_ioctl(struct file *f, unsigned int cmd, unsigned long arg) {
 	vga_ball_arg_t vla;
 
 	switch (cmd) {
