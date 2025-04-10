@@ -81,13 +81,13 @@ int main()
 
   unsigned short ball_pos_x = 256;  /* Initial x position */
   unsigned short ball_pos_y = 128;  /* Initial y position */
-  short ball_vel_x = 2;              /* X velocity (pixels per frame) */
-  short ball_vel_y = 2;              /* Y velocity (pixels per frame) */
+  short ball_vel_x = 1;              /* X velocity (pixels per frame) */
+  short ball_vel_y = 1;              /* Y velocity (pixels per frame) */
   
   /* Screen boundaries */
   const unsigned short X_MAX = 639;        /* Maximum x coordinate */
   const unsigned short Y_MAX = 479;         /* Maximum y coordinate */
-  const unsigned short BALL_SIZE = 10;      /* Ball radius in pixels */
+  const unsigned short BALL_SIZE = 8;      /* Ball radius in pixels */
 
   static const vga_ball_color_t colors[] = {
     { 0xff, 0x00, 0x00 }, /* Red */
