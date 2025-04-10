@@ -87,7 +87,7 @@ int main()
   /* Screen boundaries */
   const unsigned short X_MAX = 639;        /* Maximum x coordinate */
   const unsigned short Y_MAX = 479;         /* Maximum y coordinate */
-  const unsigned short BALL_SIZE = 30;      /* Ball radius in pixels */
+  const unsigned short BALL_SIZE = 10;      /* Ball radius in pixels */
 
   static const vga_ball_color_t colors[] = {
     { 0xff, 0x00, 0x00 }, /* Red */
